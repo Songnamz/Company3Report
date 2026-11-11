@@ -1,0 +1,7 @@
+.env
+data/
+conversation.md
+setup-tunnel.sh
+nginx/
+README.md
+.git

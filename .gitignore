@@ -1,0 +1,4 @@
+.env
+data/
+conversation.md
+node_modules/

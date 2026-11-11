@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <meta name="robots" content="noindex">
+  <meta name="theme-color" content="#1c2c4c">
+  <?!= include('Styles'); ?>
+</head>
+<body>
+
+<!-- ───────────── Login ───────────── -->
+<div id="loginView">
+  <header class="band">
+    <div class="band-inner">
+      <div class="emblem">
+        <img src="<?= logo ?>" alt="ตราสัญลักษณ์" referrerpolicy="no-referrer"
+             onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'fallback',textContent:'ร้อย3'}))">
+      </div>
+      <h1 class="title">ร้อย<span class="gold">3</span></h1>
+      <p class="subtitle">สำหรับผู้ดูแลระบบ</p>
+    </div>
+  </header>
+  <main class="wrap">
+    <form class="card login-card" id="loginForm">
+      <label class="field">
+        <span class="field-label">รหัสผ่านผู้ดูแล</span>
+        <input type="password" id="pw" autocomplete="current-password" required>
+      </label>
+      <button class="btn block primary" id="loginBtn" type="submit">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+        เข้าสู่ระบบ
+      </button>
+      <p class="err" id="loginErr" role="alert"></p>
+    </form>
+  </main>
+</div>
+
+<!-- ───────────── Dashboard ───────────── -->
+<div id="dashView" class="hidden">
+  <header class="appbar">
+    <div class="appbar-inner">
+      <div class="emblem">
+        <img src="<?= logo ?>" alt="" referrerpolicy="no-referrer"
+             onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'fallback',textContent:'R3'}))">
+      </div>
+      <div class="appbar-title"><b>ร้อย3</b><span>กล่องข้อความผู้ดูแล</span></div>
+      <span class="spacer"></span>
+      <button class="btn ghost" id="refreshBtn" type="button" title="รีเฟรช">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 3v6h-6"/></svg>
+        <span class="lbl">รีเฟรช</span>
+      </button>
+      <button class="btn ghost" id="logoutBtn" type="button" title="ออกจากระบบ">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5M21 12H9"/></svg>
+        <span class="lbl">ออกจากระบบ</span>
+      </button>
+    </div>
+  </header>
+
+  <main class="dash">
+    <div class="stats" id="stats"></div>
+
+    <div class="toolbar">
+      <div class="chips" id="chips" role="tablist">
+        <button class="chip active" data-type="" type="button">ทั้งหมด</button>
+        <button class="chip" data-type="แจ้งปัญหา" type="button">แจ้งปัญหา</button>
+        <button class="chip" data-type="ข้อเสนอแนะ" type="button">ข้อเสนอแนะ</button>
+      </div>
+      <label class="search">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <input id="fSearch" type="search" placeholder="ค้นหา รหัส / รายละเอียด / ช่องทางติดต่อ" aria-label="ค้นหา">
+      </label>
+    </div>
+
+    <div class="list grid2" id="list"></div>
+  </main>
+</div>
+
+<!-- ───────────── Lightbox (ดูรูป) ───────────── -->
+<div id="lb" class="lb hidden" role="dialog" aria-modal="true" aria-label="ดูรูปภาพ">
+  <button class="lb-btn lb-close" id="lbClose" type="button" aria-label="ปิด">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>
+  </button>
+  <button class="lb-btn lb-prev" id="lbPrev" type="button" aria-label="รูปก่อนหน้า">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+  </button>
+  <div class="lb-stage" id="lbStage">
+    <img id="lbImg" alt="" referrerpolicy="no-referrer">
+    <span class="lb-spin" id="lbSpin"></span>
+    <p class="lb-msg" id="lbMsg"></p>
+  </div>
+  <button class="lb-btn lb-next" id="lbNext" type="button" aria-label="รูปถัดไป">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+  </button>
+  <div class="lb-bar">
+    <span id="lbCap"></span>
+    <a id="lbDl" class="lb-dl" href="#" download>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg>
+      ดาวน์โหลด
+    </a>
+  </div>
+</div>
+
+<script>
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const errMsg = e => String((e && e.message) || e).replace(/^(Exception|Error):\s*/, '');
+  const store = {
+    get() { try { return sessionStorage.getItem('r3_token'); } catch (e) { return null; } },
+    set(v) { try { v ? sessionStorage.setItem('r3_token', v) : sessionStorage.removeItem('r3_token'); } catch (e) {} }
+  };
+  const ICON = {
+    issue: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg>',
+    sugg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.3 1 2.1V17h6v-.2c0-.8.4-1.6 1-2.1A7 7 0 0 0 12 2z"/></svg>',
+    phone: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z"/></svg>',
+    mail: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 6-10 7L2 6"/></svg>',
+    user: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21a8 8 0 0 0-16 0"/><circle cx="12" cy="7" r="4"/></svg>',
+    inbox: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5.1 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.5-6.9A2 2 0 0 0 16.8 4H7.2a2 2 0 0 0-1.7 1.1z"/></svg>',
+    image: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21"/></svg>',
+    broken: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M3 3l18 18"/></svg>'
+  };
+
+  let token = store.get();
+  let items = [];
+  let filterType = '';
+  let timer = null;
+
+  function showLogin(msg) {
+    token = null; store.set(null); clearInterval(timer); closeLb();
+    $('dashView').classList.add('hidden'); $('loginView').classList.remove('hidden');
+    $('loginErr').textContent = msg || '';
+  }
+  function onErr(err) {
+    const m = errMsg(err);
+    if (m.includes('SESSION_EXPIRED')) showLogin('หมดเวลาการใช้งาน กรุณาเข้าสู่ระบบอีกครั้ง');
+    else alert(m);
+  }
+
+  $('loginForm').addEventListener('submit', e => {
+    e.preventDefault();
+    $('loginBtn').disabled = true; $('loginErr').textContent = '';
+    google.script.run
+      .withSuccessHandler(t => { token = t; store.set(t); $('pw').value = ''; $('loginBtn').disabled = false; load(); })
+      .withFailureHandler(err => { $('loginErr').textContent = errMsg(err); $('loginBtn').disabled = false; })
+      .adminLogin($('pw').value);
+  });
+
+  $('logoutBtn').addEventListener('click', () => { google.script.run.adminLogout(token); showLogin(); });
+  $('refreshBtn').addEventListener('click', () => load());
+  $('fSearch').addEventListener('input', render);
+  document.querySelectorAll('.chip').forEach(c => c.addEventListener('click', () => {
+    filterType = c.dataset.type;
+    document.querySelectorAll('.chip').forEach(x => x.classList.toggle('active', x === c));
+    render();
+  }));
+
+  function load() {
+    if (!token) return showLogin();
+    $('refreshBtn').classList.add('spin');
+    google.script.run
+      .withSuccessHandler(res => {
+        items = res.items;
+        $('loginView').classList.add('hidden'); $('dashView').classList.remove('hidden');
+        $('refreshBtn').classList.remove('spin');
+        render();
+        clearInterval(timer);
+        timer = setInterval(() => {
+          const typing = document.activeElement && document.activeElement.matches('.reply-form textarea');
+          if (!document.hidden && !typing) load();
+        }, 60000);
+      })
+      .withFailureHandler(err => { $('refreshBtn').classList.remove('spin'); onErr(err); })
+      .getReports(token);
+  }
+
+  function render() {
+    const count = t => items.filter(i => i.type === t).length;
+    const today = new Date().toLocaleDateString('en-GB', { timeZone: 'Asia/Bangkok' });
+    $('stats').innerHTML = [
+      ['ทั้งหมด', items.length, 'var(--gold)'],
+      ['วันนี้', items.filter(i => i.timestamp.startsWith(today)).length, 'var(--navy-2)'],
+      ['แจ้งปัญหา', count('แจ้งปัญหา'), 'var(--issue)'],
+      ['ข้อเสนอแนะ', count('ข้อเสนอแนะ'), 'var(--sugg)']
+    ].map(([k, v, c]) => `<div class="stat" style="--c:${c}"><div class="k">${k}</div><div class="v">${v}</div></div>`).join('');
+
+    const q = $('fSearch').value.trim().toLowerCase();
+    const list = items.filter(i =>
+      (!filterType || i.type === filterType) &&
+      (!q || [i.id, i.detail, i.contact, i.sender && i.sender.name].join(' ').toLowerCase().includes(q)));
+
+    $('list').innerHTML = list.length ? list.map(card).join('') :
+      `<div class="card empty" style="grid-column:1/-1">${ICON.inbox}<div>${items.length ? 'ไม่พบรายการที่ค้นหา' : 'ยังไม่มีรายการ'}</div></div>`;
+    document.querySelectorAll('.reply-form').forEach(f => {
+      const d = drafts.get(f.dataset.report);
+      if (d) f.elements.text.value = d;
+    });
+  }
+
+  /* ───────── สนทนา ครูฝึก ↔ นักเรียน ───────── */
+  const drafts = new Map();   // reportId → ข้อความที่พิมพ์ค้าง
+
+  function threadHtml(i) {
+    const msgs = i.replies || [];
+    const list = msgs.map(m => {
+      const who = m.dir === 'teacher'
+        ? 'ครูฝึก' + (m.by ? ' · ' + esc(m.by) : '') + (m.via === 'admin' ? ' (หน้าเว็บ)' : '')
+        : 'นักเรียน';
+      const warn = m.delivered ? '' : ' <span class="msg-fail">⚠️ ส่งไม่ถึง</span>';
+      return `<div class="msg ${m.dir}"><div class="msg-meta">${who} · ${esc(m.time)}${warn}</div>` +
+             `<div class="msg-text">${esc(m.text)}</div></div>`;
+    }).join('');
+    const form = i.sender ? `
+      <form class="reply-form" data-report="${esc(i.id)}">
+        <textarea name="text" rows="2" maxlength="2000" placeholder="ตอบกลับนักเรียน (ส่งเข้าแชต LINE ของนักเรียน)"></textarea>
+        <button class="btn primary" type="submit">ส่ง</button>
+      </form>` : '';
+    if (!list && !form) return '';
+    return `<div class="thread">${list ? `<div class="thread-title">💬 การสนทนา (${msgs.length})</div>${list}` : ''}${form}</div>`;
+  }
+
+  $('list').addEventListener('input', e => {
+    const f = e.target.closest('.reply-form');
+    if (f) drafts.set(f.dataset.report, e.target.value);
+  });
+  $('list').addEventListener('submit', e => {
+    const f = e.target.closest('.reply-form');
+    if (!f) return;
+    e.preventDefault();
+    const text = f.elements.text.value.trim(), btn = f.querySelector('button');
+    if (!text || btn.disabled) return;
+    btn.disabled = true; btn.textContent = 'กำลังส่ง…';
+    google.script.run
+      .withSuccessHandler(() => { drafts.delete(f.dataset.report); f.elements.text.value = ''; load(); })
+      .withFailureHandler(err => { btn.disabled = false; btn.textContent = 'ส่ง'; onErr(err); load(); })
+      .adminReply(token, f.dataset.report, text);
+  });
+
+  function contactHtml(c) {
+    if (!c) return '';
+    const digits = c.replace(/[\s\-()]/g, '');
+    if (/^\+?\d{8,15}$/.test(digits)) return `<a class="contact" href="tel:${esc(digits)}">${ICON.phone}${esc(c)}</a>`;
+    if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(c)) return `<a class="contact" href="mailto:${esc(c)}">${ICON.mail}${esc(c)}</a>`;
+    return `<span class="contact">${ICON.user}${esc(c)}</span>`;
+  }
+
+  function senderHtml(s) {
+    if (!s) return '<span class="sender anon">ไม่ระบุตัวตน (ก่อนมีระบบเข้าสู่ระบบ)</span>';
+    const pic = /^https:\/\//.test(s.picture || '')
+      ? `<img src="${esc(s.picture)}" alt="" referrerpolicy="no-referrer" onerror="this.remove()">` : ICON.user;
+    return `<span class="sender">${pic}${esc(s.name || '(ไม่มีชื่อ)')}</span>`;
+  }
+
+  function galleryHtml(i) {
+    const ids = i.images || [];
+    if (!ids.length) return '';
+    return `<div class="gallery">${ids.map((id, n) => {
+      if (badImg.has(id)) return `<button type="button" class="g-thumb bad" title="โหลดรูปไม่ได้ (อาจถูกลบไปแล้ว)" disabled>${ICON.broken}</button>`;
+      const src = dataSrc.get(id) || pubUrl(id, 300);
+      return `<button type="button" class="g-thumb" data-report="${esc(i.id)}" data-n="${n}" aria-label="ดูรูปที่ ${n + 1}">` +
+             `<img src="${esc(src)}" data-id="${esc(id)}" alt="" referrerpolicy="no-referrer"></button>`;
+    }).join('')}</div>`;
+  }
+
+  function card(i) {
+    const cls = i.type === 'แจ้งปัญหา' ? 'issue' : 'sugg';
+    const nImg = (i.images || []).length;
+    return `
+      <article class="item ${cls}">
+        <div class="item-head">
+          <span class="pill ${cls}">${ICON[cls]}${esc(i.type)}</span>
+          <span class="item-id">${esc(i.id)}</span>
+          ${nImg ? `<span class="img-count" title="มีรูปแนบ">${ICON.image}${nImg}</span>` : ''}
+          <span class="item-time">${esc(i.timestamp)}</span>
+        </div>
+        <p class="detail">${esc(i.detail)}</p>
+        ${galleryHtml(i)}
+        ${senderHtml(i.sender)}${contactHtml(i.contact)}
+        ${threadHtml(i)}
+      </article>`;
+  }
+
+  /* ───────── โหลดรูป ─────────
+   * 1) ใช้ลิงก์สาธารณะของ Drive ก่อน (เร็ว, ย่อขนาดให้ที่ฝั่ง Google, เบราว์เซอร์ cache ได้)
+   * 2) ถ้าโหลดไม่ได้ (ไฟล์ไม่ได้เปิดลิงก์ / ถูกบล็อก) → ขอรูปผ่านเซิร์ฟเวอร์ getImage() เป็น data URL
+   *    คิวทีละ 2 รูป เพื่อไม่ให้ยิง google.script.run พร้อมกันมากเกินไป */
+
+  // รูปเก็บบนเซิร์ฟเวอร์นี้ (/i/<id>) — แนบ session ไปด้วย เผื่อปิดลิงก์สาธารณะ (LINE_IMAGES=false)
+  const pubUrl = (id, w) => `/i/${encodeURIComponent(id)}` + (token ? `?s=${encodeURIComponent(token)}` : '');
+  const dataSrc = new Map();    // fileId → data URL (จากเซิร์ฟเวอร์)
+  const dataReq = new Map();    // fileId → Promise
+  const badImg = new Set();     // fileId ที่โหลดไม่ได้ทั้งสองทาง
+
+  const queue = []; let active = 0;
+  function pump() {
+    while (active < 2 && queue.length) {
+      const j = queue.shift(); active++;
+      j.run().then(j.res, j.rej).finally(() => { active--; pump(); });
+    }
+  }
+  function enqueue(run) { return new Promise((res, rej) => { queue.push({ run, res, rej }); pump(); }); }
+
+  function loadData(id) {
+    if (dataSrc.has(id)) return Promise.resolve(dataSrc.get(id));
+    if (!dataReq.has(id)) {
+      dataReq.set(id, enqueue(() => new Promise((res, rej) => {
+        google.script.run
+          .withSuccessHandler(src => { dataSrc.set(id, src); res(src); })
+          .withFailureHandler(err => {
+            if (errMsg(err).includes('SESSION_EXPIRED')) onErr(err);
+            rej(err);
+          })
+          .getImage(token, id);
+      })).finally(() => dataReq.delete(id)));
+    }
+    return dataReq.get(id);
+  }
+
+  // event 'error' ของ <img> ไม่ bubble → ดักแบบ capture ที่ #list
+  $('list').addEventListener('error', e => {
+    const img = e.target;
+    if (img.tagName !== 'IMG' || !img.dataset.id) return;
+    const id = img.dataset.id, btn = img.closest('.g-thumb');
+    if (img.dataset.fb) return markBad(btn, id);             // fallback ก็ยังไม่ได้
+    img.dataset.fb = '1';
+    loadData(id).then(src => { img.src = src; }).catch(() => markBad(btn, id));
+  }, true);
+
+  function markBad(btn, id) {
+    badImg.add(id);
+    if (!btn) return;
+    btn.classList.add('bad'); btn.disabled = true;
+    btn.title = 'โหลดรูปไม่ได้ (อาจถูกลบไปแล้ว)';
+    btn.innerHTML = ICON.broken;
+  }
+
+  $('list').addEventListener('click', e => {
+    const t = e.target.closest('.g-thumb');
+    if (!t) return;
+    const rep = items.find(i => i.id === t.dataset.report);
+    if (rep) openLb(rep, Number(t.dataset.n));
+  });
+
+  /* ───────── Lightbox ───────── */
+
+  const lb = { rep: null, n: 0 };
+
+  function openLb(rep, n) {
+    lb.rep = rep;
+    $('lb').classList.remove('hidden');
+    document.body.style.overflow = 'hidden';
+    showLb(n);
+    $('lbClose').focus();
+  }
+  function closeLb() {
+    if (!lb.rep) return;
+    lb.rep = null;
+    $('lb').classList.add('hidden');
+    document.body.style.overflow = '';
+    $('lbImg').onload = $('lbImg').onerror = null;
+    $('lbImg').removeAttribute('src');
+  }
+  function showLb(n) {
+    const ids = lb.rep.images, total = ids.length;
+    lb.n = (n + total) % total;
+    const id = ids[lb.n], want = lb.rep.id + ':' + lb.n;
+    $('lbCap').textContent = `${lb.rep.id} · รูป ${lb.n + 1}/${total}`;
+    $('lbPrev').classList.toggle('hidden', total < 2);
+    $('lbNext').classList.toggle('hidden', total < 2);
+    const img = $('lbImg'), dl = $('lbDl');
+    const current = () => lb.rep && lb.rep.id + ':' + lb.n === want;   // ผู้ใช้อาจเลื่อนไปรูปอื่นแล้ว
+    img.classList.add('hidden'); $('lbMsg').textContent = '';
+    $('lbSpin').classList.remove('hidden'); dl.classList.add('hidden');
+    let triedData = dataSrc.has(id);
+
+    img.onload = () => {
+      if (!current()) return;
+      img.classList.remove('hidden'); $('lbSpin').classList.add('hidden');
+      dl.href = img.src; dl.removeAttribute('target');
+      dl.download = `${lb.rep.id}_${lb.n + 1}.${img.src.startsWith('data:image/png') ? 'png' : 'jpg'}`;
+      dl.classList.remove('hidden');
+    };
+    img.onerror = () => {
+      if (!current()) return;
+      if (triedData) { $('lbSpin').classList.add('hidden'); $('lbMsg').textContent = 'โหลดรูปไม่ได้ (อาจถูกลบไปแล้ว)'; return; }
+      triedData = true;
+      loadData(id).then(src => { if (current()) img.src = src; })
+        .catch(err => { if (!current()) return; $('lbSpin').classList.add('hidden'); $('lbMsg').textContent = errMsg(err); });
+    };
+    img.src = dataSrc.get(id) || pubUrl(id, 1600);
+  }
+
+  $('lbClose').addEventListener('click', closeLb);
+  $('lbPrev').addEventListener('click', () => showLb(lb.n - 1));
+  $('lbNext').addEventListener('click', () => showLb(lb.n + 1));
+  $('lb').addEventListener('click', e => { if (e.target === $('lb') || e.target === $('lbStage')) closeLb(); });
+  document.addEventListener('keydown', e => {
+    if (!lb.rep) return;
+    if (e.key === 'Escape') closeLb();
+    else if (e.key === 'ArrowLeft') showLb(lb.n - 1);
+    else if (e.key === 'ArrowRight') showLb(lb.n + 1);
+  });
+  // ปัดซ้าย/ขวาบนมือถือ
+  let tx = null;
+  $('lbStage').addEventListener('touchstart', e => { tx = e.touches[0].clientX; }, { passive: true });
+  $('lbStage').addEventListener('touchend', e => {
+    if (tx == null || !lb.rep || lb.rep.images.length < 2) return;
+    const dx = e.changedTouches[0].clientX - tx; tx = null;
+    if (Math.abs(dx) > 50) showLb(lb.n + (dx < 0 ? 1 : -1));
+  });
+
+  if (token) load(); else showLogin();
+</script>
+</body>
+</html>
