@@ -55,6 +55,20 @@ userId, display name and profile picture at the time of sending. The teacher-gro
   *Linked LINE Official Account* set to the bot. The bot can't message students who aren't friends or who blocked it.
 - Tables: `replies` (conversation), `line_msgs` (LINE message id → report, for matching quote-replies).
 
+## PWA (install on phone)
+
+- `public/manifest.webmanifest` (students, start `/`) and `public/admin.webmanifest` (teachers, start `/admin`).
+- `public/sw.js`: pages always come from the network (login state must be fresh), with an offline page as fallback.
+  Static files are cache-first; `/api`, login, `/i/` and the webhook bypass it. Bump `VERSION` in `sw.js` when the static files change.
+- `public/pwa.js`: registers the service worker; shows an install banner (Android: install button,
+  iOS: "Share → Add to Home Screen" hint), hidden in LINE's in-app browser and once installed.
+- **Login inside the installed app:** iOS opens LINE Login in an overlay that doesn't share cookies with the app.
+  So in standalone mode the button goes to `/login?pwa=1`. After sign-in a 6-digit code is shown (5 min, one-time),
+  and the student types it into the app (`pwaRedeem` API). On Android the cookie is shared, so returning to the app is enough.
+- Icons in `public/icons/` were generated from `logo.jpg` (navy background, gold ring).
+- Cloudflare must **skip** the bot challenge for `/manifest.webmanifest`, `/admin.webmanifest`, `/sw.js`,
+  `/offline.html` and `/icons/*`. Install and icon fetches don't carry the challenge cookie.
+
 ## LINE
 
 - Notifications are pushed to `LINE_TO` using `LINE_TOKEN`.

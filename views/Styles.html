@@ -447,4 +447,37 @@
   .reply-form { display: flex; gap: 8px; align-items: flex-end; margin-top: 6px; }
   .reply-form textarea { min-height: 44px; flex: 1; padding: 10px 12px; font-size: 15px; resize: vertical; }
   .reply-form .btn { min-height: 44px; flex: none; }
+  /* ───── PWA ───── */
+  .pwa-banner {
+    position: fixed; z-index: 40; left: 12px; right: 12px;
+    bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+    max-width: 560px; margin: 0 auto; padding: 10px 10px 10px 12px;
+    display: flex; align-items: center; gap: 10px;
+    background: var(--navy); color: #fff; border: 1px solid rgba(201,162,58,.55);
+    border-radius: 16px; box-shadow: 0 10px 30px rgba(28,44,76,.35);
+  }
+  .pwa-banner img { width: 40px; height: 40px; border-radius: 10px; flex: none; }
+  .pwa-text { flex: 1; min-width: 0; line-height: 1.35; }
+  .pwa-text b { display: block; font-size: 15px; }
+  .pwa-text span { font-size: 13px; color: rgba(255,255,255,.8); }
+  .pwa-text svg { width: 16px; height: 16px; vertical-align: -3px; color: var(--gold-2); }
+  .pwa-install { min-height: 38px; padding: 6px 14px; border: 0; border-radius: 10px; cursor: pointer;
+                 background: var(--gold); color: var(--navy); font: 700 14px var(--font-body); flex: none; }
+  .pwa-close { width: 34px; height: 34px; border: 0; border-radius: 50%; cursor: pointer; flex: none;
+               background: rgba(255,255,255,.12); color: #fff; font-size: 14px; }
+  body.has-pwa-banner .credit { display: none; }
+  .pwa-code { margin-top: 18px; padding-top: 16px; border-top: 1px dashed var(--line); }
+  .pwa-code p { margin: 0 0 10px; font-size: 14px; color: var(--muted); }
+  .pwa-code form { display: flex; gap: 8px; }
+  .pwa-code input { flex: 1; text-align: center; font-size: 22px; letter-spacing: 8px; font-weight: 700; }
+  .pwa-code .btn { flex: none; min-height: 50px; }
+  .pwa-code-show {
+    margin: 4px auto 14px; padding: 12px 0; font: 700 40px/1 ui-monospace, Menlo, Consolas, monospace;
+    letter-spacing: 10px; color: var(--navy); background: var(--gold-soft); border-radius: 14px;
+  }
+  /* แอปที่ติดตั้ง (iOS status bar โปร่ง) — เว้นที่ให้ notch */
+  .band { padding-top: calc(36px + env(safe-area-inset-top, 0px)); }
+  .appbar { padding-top: env(safe-area-inset-top, 0px); }
+  .lb-close { top: calc(12px + env(safe-area-inset-top, 0px)); }
+  @media (max-width: 480px) { .band { padding-top: calc(28px + env(safe-area-inset-top, 0px)); } }
 </style>

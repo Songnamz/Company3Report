@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="theme-color" content="#1c2c4c">
+  <?!= include('Styles'); ?>
+</head>
+<body>
+
+<header class="band">
+  <div class="band-inner">
+    <div class="emblem">
+      <img src="<?= logo ?>" alt="ตราสัญลักษณ์" referrerpolicy="no-referrer"
+           onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'fallback',textContent:'ร้อย3'}))">
+    </div>
+    <h1 class="title">ร้อย<span class="gold">3</span></h1>
+    <p class="subtitle">เข้าสู่ระบบสำเร็จ</p>
+  </div>
+</header>
+
+<main class="wrap">
+  <section class="card login-line">
+    <h2>รหัสเข้าสู่ระบบในแอป</h2>
+    <p class="muted">กลับไปที่แอป ร้อย3 แล้วใส่รหัสนี้ (ใช้ได้ภายใน 5 นาที)</p>
+    <div class="pwa-code-show" aria-label="รหัส">{{CODE}}</div>
+    <p class="up-note">ถ้าหน้านี้เปิดอยู่ในแอปอยู่แล้ว กดปุ่มด้านล่างได้เลย</p>
+    <a class="btn block primary" href="/">ไปที่หน้าแจ้งเรื่อง</a>
+  </section>
+</main>
+</body>
+</html>

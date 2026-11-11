@@ -1,0 +1,18 @@
+{
+  "id": "/",
+  "name": "ร้อย3 · แจ้งปัญหาและข้อเสนอแนะ",
+  "short_name": "ร้อย3",
+  "description": "ช่องทางแจ้งปัญหาและข้อเสนอแนะ ร้อย3",
+  "lang": "th",
+  "start_url": "/?source=pwa",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f5f2ea",
+  "theme_color": "#1c2c4c",
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

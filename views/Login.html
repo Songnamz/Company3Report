@@ -27,6 +27,16 @@
       เข้าสู่ระบบด้วย LINE
     </a>
     <p class="err" role="alert">{{MSG}}</p>
+
+    <!-- แสดงเฉพาะในแอปที่ติดตั้งแล้ว (pwa.js) -->
+    <div id="pwaCodeBox" class="pwa-code" hidden>
+      <p>เข้าสู่ระบบด้วย LINE แล้ว หน้าจอจะแสดง <b>รหัส 6 หลัก</b> — นำรหัสมาใส่ที่นี่</p>
+      <form id="pwaCodeForm" autocomplete="off">
+        <input id="pwaCode" inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="••••••" aria-label="รหัส 6 หลัก">
+        <button class="btn primary" type="submit">ยืนยัน</button>
+      </form>
+      <p class="err" id="pwaCodeErr" role="alert"></p>
+    </div>
   </section>
 </main>
 

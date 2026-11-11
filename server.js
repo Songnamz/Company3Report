@@ -334,6 +334,21 @@ const API = {
     return 'data:' + (p.endsWith('.png') ? 'image/png' : 'image/jpeg') + ';base64,' + fs.readFileSync(p).toString('base64');
   },
 
+  /** แอปที่ติดตั้ง: แลกรหัส 6 หลัก (ได้หลังล็อกอิน LINE) เป็น session */
+  async pwaRedeem(ctx, code) {
+    throttle('pwa_' + ctx.ip, 10, 'ลองหลายครั้งเกินไป กรุณารอสักครู่');
+    throttle('pwa_all', 300, 'ลองหลายครั้งเกินไป กรุณารอสักครู่');   // กันเดารหัสจากหลาย IP
+    const c = String(code || '').replace(/\D/g, '');
+    const hit = pwaCodes.get(c);
+    pwaCodes.delete(c);
+    if (!hit || hit.exp < Date.now()) fail('รหัสไม่ถูกต้องหรือหมดอายุ — กรุณาเข้าสู่ระบบด้วย LINE ใหม่');
+    const token = crypto.randomBytes(32).toString('hex');
+    db.prepare('INSERT INTO student_sessions (token, user_id, expires) VALUES (?, ?, ?)')
+      .run(token, hit.userId, Date.now() + APP.STUDENT_SESSION_SEC * 1000);
+    ctx.cookies.push(cookieSet(COOKIE, token, APP.STUDENT_SESSION_SEC));
+    return true;
+  },
+
   /** ผู้ดูแลตอบกลับนักเรียนจากหน้าเว็บ */
   async adminReply(ctx, token, reportId, text) {
     auth(token);
@@ -651,18 +666,20 @@ async function lineCall(kind, payload, label) {
 
 /* ───────────────────────── LINE Login (OAuth 2.1 + PKCE) ───────────────────────── */
 
-const oauthStates = new Map();   // state → { verifier, nonce, exp }
+const oauthStates = new Map();   // state → { verifier, nonce, pwa, exp }
+const pwaCodes = new Map();      // รหัส 6 หลัก → { userId, exp }  (เข้าสู่ระบบในแอปที่ติดตั้ง)
 const loginReady = () => !!(APP.LOGIN_ID && APP.LOGIN_SECRET && APP.APP_URL);
 const callbackUrl = () => APP.APP_URL + '/auth/callback';
 
-function startLogin(res) {
+function startLogin(res, pwa) {
   if (!loginReady()) return send(res, 503, PAGES.loginMissing, { 'Content-Type': 'text/html; charset=utf-8' });
   const now = Date.now();
   for (const [k, v] of oauthStates) if (v.exp < now) oauthStates.delete(k);
+  for (const [k, v] of pwaCodes) if (v.exp < now) pwaCodes.delete(k);
   const state = crypto.randomBytes(16).toString('base64url');
   const verifier = crypto.randomBytes(32).toString('base64url');
   const nonce = crypto.randomBytes(16).toString('base64url');
-  oauthStates.set(state, { verifier, nonce, exp: now + 10 * 60 * 1000 });
+  oauthStates.set(state, { verifier, nonce, pwa: !!pwa, exp: now + 10 * 60 * 1000 });
   const q = new URLSearchParams({
     response_type: 'code',
     client_id: APP.LOGIN_ID,
@@ -719,7 +736,19 @@ async function finishLogin(req, res, url) {
     const token = crypto.randomBytes(32).toString('hex');
     db.prepare('INSERT INTO student_sessions (token, user_id, expires) VALUES (?, ?, ?)')
       .run(token, prof.sub, now + APP.STUDENT_SESSION_SEC * 1000);
-    console.log('login: ' + prof.sub + ' (' + name + ')');
+    console.log('login: ' + prof.sub + ' (' + name + ')' + (st.pwa ? ' [pwa]' : ''));
+    if (st.pwa) {
+      // แอปที่ติดตั้ง (โดยเฉพาะ iOS) ไม่ได้ cookie นี้ → ออกรหัส 6 หลักให้นำไปใส่ในแอป
+      let code;
+      do { code = String(crypto.randomInt(1000000)).padStart(6, '0'); } while (pwaCodes.has(code));
+      pwaCodes.set(code, { userId: prof.sub, exp: now + 5 * 60 * 1000 });
+      res.writeHead(200, Object.assign({}, BASE_HEADERS, {
+        'Content-Type': 'text/html; charset=utf-8',
+        'Set-Cookie': [cookieSet(COOKIE, token, APP.STUDENT_SESSION_SEC), cookieSet('r3o', '', 0)],
+        'Cache-Control': 'no-store'
+      }));
+      return res.end(PAGES.loginCode.replace('{{CODE}}', code));
+    }
     res.writeHead(302, Object.assign({}, BASE_HEADERS, {
       Location: '/',
       'Set-Cookie': [cookieSet(COOKIE, token, APP.STUDENT_SESSION_SEC), cookieSet('r3o', '', 0)],
@@ -738,9 +767,17 @@ const escHtml = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&
 
 function renderPage(name, title) {
   const styles = fs.readFileSync(path.join(VIEWS, 'Styles.html'), 'utf8');
-  const head = `<meta name="viewport" content="width=device-width, initial-scale=1">\n` +
+  const manifest = name === 'Admin' ? '/admin.webmanifest' : '/manifest.webmanifest';
+  const head = `<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">\n` +
                `  <link rel="icon" type="image/jpeg" href="/logo.jpg">\n` +
-               `  <link rel="apple-touch-icon" href="/logo.jpg">\n` +
+               // use-credentials: ส่ง cookie ของ Cloudflare ไปด้วย ไม่งั้นโดนหน้า challenge
+               `  <link rel="manifest" href="${manifest}" crossorigin="use-credentials">\n` +
+               `  <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">\n` +
+               `  <meta name="mobile-web-app-capable" content="yes">\n` +
+               `  <meta name="apple-mobile-web-app-capable" content="yes">\n` +
+               `  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">\n` +
+               `  <meta name="apple-mobile-web-app-title" content="${name === 'Admin' ? 'ร้อย3 ผู้ดูแล' : 'ร้อย3'}">\n` +
+               `  <script src="/pwa.js" defer></script>\n` +
                `  <title>${escHtml(title)}</title>\n  ${styles}\n  <script src="/gas-shim.js"></script>`;
   return fs.readFileSync(path.join(VIEWS, name + '.html'), 'utf8')
     .replace("<?!= include('Styles'); ?>", () => head)
@@ -752,13 +789,28 @@ const PAGES = {
   admin: renderPage('Admin', APP.NAME + ' · ผู้ดูแล'),
   login: loginTpl.replace('{{MSG}}', ''),
   loginError: loginTpl,   // {{MSG}} แทนที่ตอนแสดงผล
-  loginMissing: loginTpl.replace('{{MSG}}', 'ระบบยังไม่ได้ตั้งค่า LINE Login — กรุณาแจ้งผู้ดูแลระบบ')
+  loginMissing: loginTpl.replace('{{MSG}}', 'ระบบยังไม่ได้ตั้งค่า LINE Login — กรุณาแจ้งผู้ดูแลระบบ'),
+  loginCode: renderPage('LoginCode', APP.NAME + ' · รหัสเข้าสู่ระบบ')
 };
 /** หน้าฟอร์ม + ข้อมูลนักเรียนที่ล็อกอิน (JSON ใน <script> — escape '<' กันปิดแท็ก) */
 const indexFor = s => PAGES.index.replace('<!--R3_USER-->', () =>
   '<script>window.R3_USER=' + JSON.stringify({ name: s.name, picture: s.picture }).replace(/</g, '\\u003c') + ';</script>');
 const SHIM = fs.readFileSync(path.join(__dirname, 'public', 'gas-shim.js'));
 const LOGO_FILE = fs.readFileSync(path.join(__dirname, 'public', 'logo.jpg'));   // ไอคอนแท็บเบราว์เซอร์
+
+/** ไฟล์คงที่ใน public/ (PWA: manifest, service worker, ไอคอน, หน้า offline) */
+const STATIC_TYPES = { '.js': 'text/javascript; charset=utf-8', '.webmanifest': 'application/manifest+json; charset=utf-8',
+                       '.png': 'image/png', '.jpg': 'image/jpeg', '.html': 'text/html; charset=utf-8' };
+const STATIC = new Map();
+for (const f of ['pwa.js', 'sw.js', 'manifest.webmanifest', 'admin.webmanifest', 'offline.html',
+                 ...fs.readdirSync(path.join(__dirname, 'public', 'icons')).map(f => 'icons/' + f)]) {
+  STATIC.set('/' + f, {
+    body: fs.readFileSync(path.join(__dirname, 'public', f)),
+    type: STATIC_TYPES[path.extname(f)],
+    // sw.js ต้องไม่ถูก cache นาน ไม่งั้นอัปเดตไม่ถึงผู้ใช้
+    cache: f === 'sw.js' || f.endsWith('.webmanifest') ? 'no-cache' : 'public, max-age=86400'
+  });
+}
 
 /* ───────────────────────── HTTP ───────────────────────── */
 
@@ -802,7 +854,7 @@ async function handle(req, res) {
       const s = studentFromReq(req);
       return send(res, 200, s ? indexFor(s) : PAGES.login, html);
     }
-    if (p === '/login') return startLogin(res);
+    if (p === '/login') return startLogin(res, url.searchParams.get('pwa') === '1');
     if (p === '/auth/callback') return finishLogin(req, res, url);
     if (p === '/logout') {
       const t = parseCookies(req)[COOKIE];
@@ -816,6 +868,10 @@ async function handle(req, res) {
     }
     if (p === '/gas-shim.js') {
       return send(res, 200, SHIM, { 'Content-Type': 'text/javascript; charset=utf-8', 'Cache-Control': 'public, max-age=300' });
+    }
+    if (STATIC.has(p)) {
+      const f = STATIC.get(p);
+      return send(res, 200, f.body, { 'Content-Type': f.type, 'Cache-Control': f.cache });
     }
     if (p === '/logo.jpg' || p === '/favicon.ico') {
       return send(res, 200, LOGO_FILE, { 'Content-Type': 'image/jpeg', 'Cache-Control': 'public, max-age=86400' });
@@ -843,8 +899,9 @@ async function handle(req, res) {
     if (!Object.hasOwn(API, fn)) return json(res, 404, { ok: false, error: 'ไม่พบฟังก์ชัน ' + fn });
     try {
       const args = JSON.parse((await readBody(req, 2 * 1024 * 1024)).toString('utf8') || '[]');
-      const ctx = { ip: clientIp(req), student: studentFromReq(req) };
+      const ctx = { ip: clientIp(req), student: studentFromReq(req), cookies: [] };
       const result = await API[fn](ctx, ...(Array.isArray(args) ? args : []));
+      if (ctx.cookies.length) res.setHeader('Set-Cookie', ctx.cookies);
       return json(res, 200, { ok: true, result: result === undefined ? null : result });
     } catch (e) {
       if (e instanceof UserError) return json(res, 200, { ok: false, error: e.message });
