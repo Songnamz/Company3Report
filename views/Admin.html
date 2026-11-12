@@ -86,6 +86,7 @@
   </button>
   <div class="lb-stage" id="lbStage">
     <img id="lbImg" alt="" referrerpolicy="no-referrer">
+    <video id="lbVid" class="hidden" controls playsinline preload="metadata"></video>
     <span class="lb-spin" id="lbSpin"></span>
     <p class="lb-msg" id="lbMsg"></p>
   </div>
@@ -117,6 +118,8 @@
     user: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21a8 8 0 0 0-16 0"/><circle cx="12" cy="7" r="4"/></svg>',
     inbox: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5.1 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.5-6.9A2 2 0 0 0 16.8 4H7.2a2 2 0 0 0-1.7 1.1z"/></svg>',
     image: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21"/></svg>',
+    play: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.5v13l11-6.5z"/></svg>',
+    video: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="14" height="14" rx="2"/><path d="m16 10 6-3v10l-6-3"/></svg>',
     broken: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M3 3l18 18"/></svg>'
   };
 
@@ -255,6 +258,11 @@
     if (!ids.length) return '';
     return `<div class="gallery">${ids.map((id, n) => {
       if (badImg.has(id)) return `<button type="button" class="g-thumb bad" title="โหลดรูปไม่ได้ (อาจถูกลบไปแล้ว)" disabled>${ICON.broken}</button>`;
+      if (isVid(i, id)) {
+        return `<button type="button" class="g-thumb vid" data-report="${esc(i.id)}" data-n="${n}" aria-label="เล่นวิดีโอที่ ${n + 1}">` +
+               `<img src="${esc(pubUrl(id, 0, '/t'))}" alt="" referrerpolicy="no-referrer" onerror="this.remove()">` +
+               `<span class="g-play">${ICON.play}</span></button>`;
+      }
       const src = dataSrc.get(id) || pubUrl(id, 300);
       return `<button type="button" class="g-thumb" data-report="${esc(i.id)}" data-n="${n}" aria-label="ดูรูปที่ ${n + 1}">` +
              `<img src="${esc(src)}" data-id="${esc(id)}" alt="" referrerpolicy="no-referrer"></button>`;
@@ -263,13 +271,14 @@
 
   function card(i) {
     const cls = i.type === 'แจ้งปัญหา' ? 'issue' : 'sugg';
-    const nImg = (i.images || []).length;
+    const nImg = (i.images || []).length, nVid = (i.videos || []).length;
     return `
       <article class="item ${cls}">
         <div class="item-head">
           <span class="pill ${cls}">${ICON[cls]}${esc(i.type)}</span>
           <span class="item-id">${esc(i.id)}</span>
-          ${nImg ? `<span class="img-count" title="มีรูปแนบ">${ICON.image}${nImg}</span>` : ''}
+          ${nImg - nVid ? `<span class="img-count" title="มีรูปแนบ">${ICON.image}${nImg - nVid}</span>` : ''}
+          ${nVid ? `<span class="img-count" title="มีวิดีโอแนบ">${ICON.video}${nVid}</span>` : ''}
           <span class="item-time">${esc(i.timestamp)}</span>
         </div>
         <p class="detail">${esc(i.detail)}</p>
@@ -285,7 +294,8 @@
    *    คิวทีละ 2 รูป เพื่อไม่ให้ยิง google.script.run พร้อมกันมากเกินไป */
 
   // รูปเก็บบนเซิร์ฟเวอร์นี้ (/i/<id>) — แนบ session ไปด้วย เผื่อปิดลิงก์สาธารณะ (LINE_IMAGES=false)
-  const pubUrl = (id, w) => `/i/${encodeURIComponent(id)}` + (token ? `?s=${encodeURIComponent(token)}` : '');
+  const pubUrl = (id, w, sub) => `/i/${encodeURIComponent(id)}${sub || ''}` + (token ? `?s=${encodeURIComponent(token)}` : '');
+  const isVid = (rep, id) => (rep.videos || []).includes(id);
   const dataSrc = new Map();    // fileId → data URL (จากเซิร์ฟเวอร์)
   const dataReq = new Map();    // fileId → Promise
   const badImg = new Set();     // fileId ที่โหลดไม่ได้ทั้งสองทาง
@@ -358,18 +368,42 @@
     document.body.style.overflow = '';
     $('lbImg').onload = $('lbImg').onerror = null;
     $('lbImg').removeAttribute('src');
+    stopVid();
+  }
+  function stopVid() {
+    const v = $('lbVid');
+    v.onloadeddata = v.onerror = null;
+    v.pause(); v.removeAttribute('src'); v.load(); v.classList.add('hidden');
   }
   function showLb(n) {
     const ids = lb.rep.images, total = ids.length;
     lb.n = (n + total) % total;
     const id = ids[lb.n], want = lb.rep.id + ':' + lb.n;
-    $('lbCap').textContent = `${lb.rep.id} · รูป ${lb.n + 1}/${total}`;
+    const vid = isVid(lb.rep, id);
+    $('lbCap').textContent = `${lb.rep.id} · ${vid ? 'วิดีโอ' : 'รูป'} ${lb.n + 1}/${total}`;
     $('lbPrev').classList.toggle('hidden', total < 2);
     $('lbNext').classList.toggle('hidden', total < 2);
     const img = $('lbImg'), dl = $('lbDl');
     const current = () => lb.rep && lb.rep.id + ':' + lb.n === want;   // ผู้ใช้อาจเลื่อนไปรูปอื่นแล้ว
     img.classList.add('hidden'); $('lbMsg').textContent = '';
     $('lbSpin').classList.remove('hidden'); dl.classList.add('hidden');
+    stopVid();
+    if (vid) {
+      const v = $('lbVid'), src = pubUrl(id);
+      v.onloadeddata = () => {
+        if (!current()) return;
+        $('lbSpin').classList.add('hidden'); v.classList.remove('hidden');
+        dl.href = src; dl.download = `${lb.rep.id}_${lb.n + 1}.mp4`; dl.classList.remove('hidden');
+      };
+      v.onerror = () => {
+        if (!current()) return;
+        $('lbSpin').classList.add('hidden');
+        $('lbMsg').textContent = 'เล่นวิดีโอในเบราว์เซอร์นี้ไม่ได้ — กดดาวน์โหลดเพื่อเปิดดูในเครื่อง';
+        dl.href = src; dl.download = `${lb.rep.id}_${lb.n + 1}.mp4`; dl.classList.remove('hidden');
+      };
+      v.src = src;
+      return;
+    }
     let triedData = dataSrc.has(id);
 
     img.onload = () => {

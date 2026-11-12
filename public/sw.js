@@ -2,10 +2,10 @@
  * - หน้าเว็บ: ดึงจากเซิร์ฟเวอร์ก่อนเสมอ (สถานะล็อกอิน/ข้อมูลต้องสดใหม่) — ออฟไลน์ → หน้า offline
  * - ไฟล์คงที่ (โลโก้ ไอคอน สคริปต์): ใช้จาก cache แล้วอัปเดตเบื้องหลัง
  * - API / ล็อกอิน / รูปแนบ / webhook: ไม่ยุ่งเลย */
-const VERSION = 'r3-v2';
+const VERSION = 'r3-v3';
 const SHELL = ['/offline.html', '/logo.jpg', '/gas-shim.js', '/pwa.js', '/icons/icon-192.png'];
 const STATIC = /^\/(logo\.jpg|favicon\.ico|gas-shim\.js|pwa\.js|offline\.html|icons\/.+)$/;
-const BYPASS = /^\/(api\/|auth\/|login|logout|webhook|i\/|sw\.js)/;
+const BYPASS = /^\/(api\/|auth\/|login|logout|webhook|i\/|upload\/|sw\.js)/;
 
 self.addEventListener('install', e => {
   // ทีละไฟล์ — ถ้าไฟล์ใดโหลดไม่ได้ (เช่น Cloudflare challenge) ก็ยังติดตั้งได้

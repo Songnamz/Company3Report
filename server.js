@@ -4,7 +4,7 @@
  *
  * Node.js 22 เท่านั้น ไม่มี dependency ภายนอก (ใช้ node:http + node:sqlite ในตัว)
  *   ข้อมูล  → /data/r3.db (SQLite)
- *   รูปแนบ  → /data/images/<id>.jpg|png
+ *   ไฟล์แนบ → /data/images/<id>.jpg|png|mp4|mov  (+ <id>.thumb.jpg = ภาพตัวอย่างของวิดีโอ)
  *
  * Environment (.env): ดู .env.example
  *
@@ -30,6 +30,8 @@ const APP = {
   MAX_PER_10MIN: Number(env.MAX_PER_10MIN) || 30,          // กันสแปม (ทั้งระบบ)
   MAX_IMAGES: 4,
   MAX_IMG_BYTES: 1024 * 1024,
+  MAX_VIDEOS: 2,                                          // นับรวมในไฟล์แนบ MAX_IMAGES
+  MAX_VIDEO_BYTES: (Number(env.MAX_VIDEO_MB) || 50) * 1024 * 1024,
   // true  = รูปเปิดดูได้ด้วยลิงก์ (สุ่มยาว เดาไม่ได้) → LINE ดึงไปแสดงในกลุ่มได้
   // false = รูปดูได้เฉพาะผู้ดูแลที่ล็อกอิน — LINE ได้แค่ข้อความ "มีรูปแนบ"
   LINE_IMAGES: env.LINE_IMAGES !== 'false',
@@ -187,11 +189,21 @@ function auth(token) {
 
 function imgPath(id) {
   if (!ID_RE.test(id)) return null;
-  for (const ext of ['jpg', 'png']) {
+  for (const ext of ['jpg', 'png', 'mp4', 'mov']) {
     const p = path.join(IMG_DIR, id + '.' + ext);
     if (fs.existsSync(p)) return p;
   }
   return null;
+}
+
+const isVideo = p => /\.(mp4|mov)$/.test(p || '');
+const thumbFile = id => path.join(IMG_DIR, id + '.thumb.jpg');
+const MIME = { '.jpg': 'image/jpeg', '.png': 'image/png', '.mp4': 'video/mp4', '.mov': 'video/quicktime' };
+
+/** ตรวจ header ไฟล์วิดีโอ (ISO BMFF: 'ftyp' ที่ byte 4) → 'mp4' | 'mov' | '' */
+function videoExt(head) {
+  if (head.length < 12 || head.toString('latin1', 4, 8) !== 'ftyp') return '';
+  return head.toString('latin1', 8, 12) === 'qt  ' ? 'mov' : 'mp4';
 }
 
 /** base64 → { bytes, mime } ตรวจ magic bytes จริง */
@@ -227,15 +239,17 @@ function cleanup() {
   for (const f of fs.readdirSync(IMG_DIR)) {
     const p = path.join(IMG_DIR, f);
     try {
-      if (!used.has(f.replace(/\.\w+$/, '')) && fs.statSync(p).mtimeMs < cutoff) { fs.unlinkSync(p); removed++; }
+      if (!used.has(f.split('.')[0]) && fs.statSync(p).mtimeMs < cutoff) { fs.unlinkSync(p); removed++; }
     } catch (e) { /* ignore */ }
   }
   db.prepare('DELETE FROM sessions WHERE expires < ?').run(Date.now());
   db.prepare('DELETE FROM student_sessions WHERE expires < ?').run(Date.now());
-  if (removed) console.log('cleanup: ลบรูปที่ไม่ได้ใช้ ' + removed + ' ไฟล์');
+  if (removed) console.log('cleanup: ลบไฟล์แนบที่ไม่ได้ใช้ ' + removed + ' ไฟล์');
 }
 
 const imgUrl = id => APP.APP_URL + '/i/' + id;
+/** รูปสำหรับแสดงผล: รูปเอง หรือภาพตัวอย่างของวิดีโอ */
+const previewUrl = id => isVideo(imgPath(id)) ? imgUrl(id) + '/t' : imgUrl(id);
 
 /* ───────────────────────── API (google.script.run) ───────────────────────── */
 
@@ -254,8 +268,9 @@ const API = {
     if (r.detail.length < 5) fail('กรุณาอธิบายรายละเอียดอย่างน้อย 5 ตัวอักษร');
 
     const raw = Array.isArray(form.images) ? form.images : [];
-    if (raw.length > APP.MAX_IMAGES) fail('แนบรูปได้สูงสุด ' + APP.MAX_IMAGES + ' รูป');
+    if (raw.length > APP.MAX_IMAGES) fail('แนบไฟล์ได้สูงสุด ' + APP.MAX_IMAGES + ' ไฟล์');
     const ups = raw.map(verifyUpload).filter((u, i, a) => a.findIndex(x => x.id === u.id) === i);
+    if (ups.filter(u => isVideo(imgPath(u.id))).length > APP.MAX_VIDEOS) fail('แนบวิดีโอได้สูงสุด ' + APP.MAX_VIDEOS + ' คลิป');
 
     throttle('rate', APP.MAX_PER_10MIN);
     r.id = newReportId();
@@ -280,6 +295,17 @@ const API = {
     fs.writeFileSync(path.join(IMG_DIR, id + (b.mime === 'image/png' ? '.png' : '.jpg')), b.bytes);
     const shared = APP.LINE_IMAGES, t = Date.now();
     return { id, shared, t, sig: sign([id, shared ? 1 : 0, t].join('|')) };
+  },
+
+  /** ภาพตัวอย่างของวิดีโอ (เบราว์เซอร์จับเฟรมแรกให้) — ไม่บังคับ */
+  async uploadThumb(ctx, up, b64) {
+    requireStudent(ctx);
+    const u = verifyUpload(up);
+    if (!isVideo(imgPath(u.id))) fail('ไฟล์นี้ไม่ใช่วิดีโอ');
+    const b = decodeImage(b64);
+    if (b.mime !== 'image/jpeg') fail('ภาพตัวอย่างต้องเป็น JPG');
+    fs.writeFileSync(thumbFile(u.id), b.bytes);
+    return true;
   },
 
   async adminLogin(ctx, password) {
@@ -322,6 +348,7 @@ const API = {
       detail: v.detail,
       contact: v.contact,
       images: v.images.split(',').map(s => s.trim()).filter(Boolean),
+      videos: v.images.split(',').map(s => s.trim()).filter(id => id && isVideo(imgPath(id))),
       sender: v.user_id ? { name: v.user_name, picture: v.user_picture } : null
     }));
     return { items };
@@ -330,7 +357,7 @@ const API = {
   async getImage(ctx, token, fileId) {
     auth(token);
     const p = imgPath(String(fileId || ''));
-    if (!p) fail('ไม่พบรูปภาพ (อาจถูกลบไปแล้ว)');
+    if (!p || isVideo(p)) fail('ไม่พบรูปภาพ (อาจถูกลบไปแล้ว)');
     return 'data:' + (p.endsWith('.png') ? 'image/png' : 'image/jpeg') + ';base64,' + fs.readFileSync(p).toString('base64');
   },
 
@@ -373,10 +400,13 @@ async function notifyLine(r) {
   // openExternalBrowser=1 → LINE เปิดด้วยเบราว์เซอร์ปกติของเครื่อง
   const adminUrl = APP.APP_URL ? APP.APP_URL + '/admin?openExternalBrowser=1' : '';
   const pics = APP.APP_URL ? (r.lineImages || []).slice(0, 4) : [];
+  const vids = pics.filter(id => isVideo(imgPath(id)));
   const imgMsg = id => ({ type: 'image', originalContentUrl: imgUrl(id), previewImageUrl: imgUrl(id) });
+  // วิดีโออยู่ในการ์ดเท่านั้น (ภาพตัวอย่าง + ▶ แตะเพื่อเล่น) — ไม่ส่งเป็นข้อความแยก
 
   const flex = [flexCard(r, adminUrl, pics)];
-  const plain = [{ type: 'text', text: plainText(r, adminUrl, pics.length) }].concat(pics.map(imgMsg));
+  const plain = [{ type: 'text', text: plainText(r, adminUrl, pics.length) }]
+    .concat(pics.filter(id => !vids.includes(id)).map(imgMsg));
 
   for (const to of LINE_TO) {
     let res = await linePush(to, flex);
@@ -537,7 +567,7 @@ function flexCard(r, adminUrl, picIds) {
   rows.push(row('รหัส', r.id), row('เวลา', fmt(r.time || Date.now())));
   if (r.contact) rows.push(row('ติดต่อกลับ', r.contact));
   else if (!r.sender) rows.push(row('ผู้แจ้ง', 'ไม่ระบุตัวตน'));
-  if (nImg) rows.push(row('รูปแนบ', nImg + ' รูป' + (pics.length < nImg ? ' (ดูครบในหน้าผู้ดูแล)' : '')));
+  if (nImg) rows.push(row('ไฟล์แนบ', mediaCount(r.images) + (pics.length < nImg ? ' (ดูครบในหน้าผู้ดูแล)' : '')));
 
   const bubble = {
     type: 'bubble',
@@ -586,10 +616,26 @@ function flexCard(r, adminUrl, picIds) {
 function galleryHero(ids) {
   if (!ids.length) return null;
   const GAP = '2px';
-  const tile = (id, ratio) => ({
-    type: 'image', url: imgUrl(id), size: 'full', aspectMode: 'cover', aspectRatio: ratio,
-    action: { type: 'uri', uri: imgUrl(id) }
-  });
+  const tile = (id, ratio) => {
+    const img = {
+      type: 'image', url: previewUrl(id), size: 'full', aspectMode: 'cover', aspectRatio: ratio,
+      action: { type: 'uri', uri: imgUrl(id) }
+    };
+    if (!isVideo(imgPath(id))) return img;
+    // วิดีโอ: ภาพตัวอย่าง + ปุ่ม ▶ ตรงกลาง — แตะแล้วเปิดเล่นวิดีโอ
+    return {
+      type: 'box', layout: 'vertical', paddingAll: '0px', action: { type: 'uri', uri: imgUrl(id) },
+      contents: [img, {
+        type: 'box', layout: 'vertical', position: 'absolute', offsetTop: '0px', offsetBottom: '0px',
+        offsetStart: '0px', offsetEnd: '0px', justifyContent: 'center', alignItems: 'center',
+        contents: [{
+          type: 'box', layout: 'vertical', width: '48px', height: '48px', cornerRadius: '24px',
+          backgroundColor: '#000000AA', justifyContent: 'center', alignItems: 'center',
+          contents: [{ type: 'text', text: '▶', color: '#FFFFFF', size: 'xl', align: 'center', offsetStart: '2px' }]
+        }]
+      }]
+    };
+  };
   const col = contents => ({ type: 'box', layout: 'vertical', flex: 1, spacing: GAP, contents });
   const rowBox = contents => ({ type: 'box', layout: 'horizontal', spacing: GAP, contents });
 
@@ -617,10 +663,16 @@ function galleryHero(ids) {
         type: 'box', layout: 'vertical', position: 'absolute', offsetTop: '10px', offsetEnd: '10px',
         backgroundColor: '#1C2C4CCC', cornerRadius: '20px',
         paddingTop: '3px', paddingBottom: '3px', paddingStart: '10px', paddingEnd: '10px',
-        contents: [{ type: 'text', text: '📷 ' + ids.length + ' รูป', size: 'xs', color: '#FFFFFF', weight: 'bold' }]
+        contents: [{ type: 'text', text: (ids.some(id => isVideo(imgPath(id))) ? '📎 ' : '📷 ') + mediaCount(ids), size: 'xs', color: '#FFFFFF', weight: 'bold' }]
       }
     ]
   };
+}
+
+/** "2 รูป · 1 วิดีโอ" */
+function mediaCount(ids) {
+  const nV = (ids || []).filter(id => isVideo(imgPath(id))).length, nI = (ids || []).length - nV;
+  return [nI ? nI + ' รูป' : '', nV ? nV + ' วิดีโอ' : ''].filter(Boolean).join(' · ');
 }
 
 function plainText(r, adminUrl, nSent) {
@@ -631,7 +683,7 @@ function plainText(r, adminUrl, nSent) {
   if (r.sender) lines.push('ผู้แจ้ง: ' + (r.sender.name || '(ไม่มีชื่อ)'));
   lines.push('รหัส: ' + r.id);
   if (r.contact) lines.push('ติดต่อกลับ: ' + r.contact);
-  if (nImg) lines.push('📷 แนบรูป ' + nImg + ' รูป' + (nSent < nImg ? ' (ดูได้ในหน้าผู้ดูแล)' : ''));
+  if (nImg) lines.push('📎 ไฟล์แนบ ' + mediaCount(r.images) + (nSent < nImg ? ' (ดูได้ในหน้าผู้ดูแล)' : ''));
   if (adminUrl) lines.push('', 'ดูรายการทั้งหมด: ' + adminUrl);
   return lines.join('\n');
 }
@@ -840,6 +892,65 @@ function readBody(req, limit) {
   });
 }
 
+/** ส่งวิดีโอแบบรองรับ Range (iPhone/Safari และ LINE ต้องใช้เพื่อเล่น/เลื่อน) */
+function sendVideo(req, res, file, cache) {
+  const size = fs.statSync(file).size;
+  // .mov ส่วนใหญ่เป็น H.264/HEVC ในกล่องแบบเดียวกับ mp4 → ส่งเป็น video/mp4 ให้ Chrome/LINE เล่นได้
+  const h = Object.assign({}, BASE_HEADERS, {
+    'Content-Type': 'video/mp4', 'Accept-Ranges': 'bytes', 'Cache-Control': cache, 'X-Robots-Tag': 'noindex'
+  });
+  const r = /^bytes=(\d*)-(\d*)$/.exec(String(req.headers.range || ''));
+  let start = 0, end = size - 1, code = 200;
+  if (r && (r[1] || r[2])) {
+    if (r[1]) { start = Number(r[1]); if (r[2]) end = Math.min(Number(r[2]), size - 1); }
+    else start = Math.max(0, size - Number(r[2]));   // bytes=-N
+    if (start > end || start >= size) {
+      res.writeHead(416, Object.assign(h, { 'Content-Range': 'bytes */' + size })); return res.end();
+    }
+    code = 206; h['Content-Range'] = `bytes ${start}-${end}/${size}`;
+  }
+  h['Content-Length'] = end - start + 1;
+  res.writeHead(code, h);
+  if (req.method === 'HEAD') return res.end();
+  fs.createReadStream(file, { start, end }).on('error', () => res.destroy()).pipe(res);
+}
+
+/** อัปโหลดวิดีโอ: body = ไฟล์ดิบ (ไม่ใช่ base64) เขียนลงดิสก์ทีละส่วน ไม่กินแรม */
+async function uploadVideo(req, res) {
+  const tmp = path.join(IMG_DIR, '.up-' + crypto.randomBytes(8).toString('hex'));
+  try {
+    const ctx = { ip: clientIp(req), student: studentFromReq(req), cookies: [] };
+    requireStudent(ctx);
+    throttle('upv', APP.MAX_PER_10MIN * APP.MAX_VIDEOS);
+    if (Number(req.headers['content-length'] || 0) > APP.MAX_VIDEO_BYTES) fail('วิดีโอใหญ่เกิน ' + (APP.MAX_VIDEO_BYTES >> 20) + ' MB');
+    await new Promise((resolve, reject) => {
+      const out = fs.createWriteStream(tmp);
+      let size = 0;
+      req.on('data', c => {
+        size += c.length;
+        if (size > APP.MAX_VIDEO_BYTES) { req.destroy(); out.destroy(); reject(new UserError('วิดีโอใหญ่เกิน ' + (APP.MAX_VIDEO_BYTES >> 20) + ' MB')); }
+      });
+      req.on('error', reject);
+      out.on('error', reject);
+      out.on('finish', resolve);
+      req.pipe(out);
+    });
+    const fd = fs.openSync(tmp, 'r'), head = Buffer.alloc(12);
+    fs.readSync(fd, head, 0, 12, 0); fs.closeSync(fd);
+    const ext = videoExt(head);
+    if (!ext) fail('วิดีโอต้องเป็นไฟล์ MP4 / MOV');
+    const id = crypto.randomBytes(24).toString('base64url');
+    fs.renameSync(tmp, path.join(IMG_DIR, id + '.' + ext));
+    const shared = APP.LINE_IMAGES, t = Date.now();
+    return json(res, 200, { ok: true, result: { id, shared, t, sig: sign([id, shared ? 1 : 0, t].join('|')) } });
+  } catch (e) {
+    fs.rm(tmp, { force: true }, () => {});
+    if (e instanceof UserError) return json(res, 200, { ok: false, error: e.message });
+    console.error('uploadVideo:', e);
+    return json(res, 500, { ok: false, error: 'อัปโหลดวิดีโอไม่สำเร็จ กรุณาลองใหม่' });
+  }
+}
+
 // nginx ส่ง IP จริงจาก Cloudflare มาใน X-Real-IP
 const clientIp = req => String(req.headers['x-real-ip'] || req.headers['cf-connecting-ip'] || req.socket.remoteAddress || '');
 
@@ -878,21 +989,31 @@ async function handle(req, res) {
     }
     if (p === '/healthz') return send(res, 200, 'ok', { 'Content-Type': 'text/plain' });
 
-    const m = p.match(/^\/i\/([\w-]+)$/);
+    const m = p.match(/^\/i\/([\w-]+)(\/t)?$/);
     if (m) {
-      const file = imgPath(m[1]);
+      let file = imgPath(m[1]);
       if (file && !APP.LINE_IMAGES) {
         try { auth(url.searchParams.get('s')); } catch (e) { return send(res, 403, 'Forbidden'); }
       }
       if (!file) return send(res, 404, 'Not found', { 'Content-Type': 'text/plain' });
+      const cache = APP.LINE_IMAGES ? 'public, max-age=31536000, immutable' : 'private, max-age=86400';
+      if (m[2]) {   // ภาพตัวอย่างวิดีโอ (ไม่มี → โลโก้)
+        if (!isVideo(file)) return send(res, 404, 'Not found', { 'Content-Type': 'text/plain' });
+        const t = thumbFile(m[1]);
+        if (!fs.existsSync(t)) return send(res, 200, LOGO_FILE, { 'Content-Type': 'image/jpeg', 'Cache-Control': 'public, max-age=300' });
+        return send(res, 200, fs.readFileSync(t), { 'Content-Type': 'image/jpeg', 'Cache-Control': cache, 'X-Robots-Tag': 'noindex' });
+      }
+      if (isVideo(file)) return sendVideo(req, res, file, cache);
       return send(res, 200, fs.readFileSync(file), {
-        'Content-Type': file.endsWith('.png') ? 'image/png' : 'image/jpeg',
-        'Cache-Control': APP.LINE_IMAGES ? 'public, max-age=31536000, immutable' : 'private, max-age=86400',
+        'Content-Type': MIME[path.extname(file)],
+        'Cache-Control': cache,
         'X-Robots-Tag': 'noindex'
       });
     }
     return send(res, 404, 'Not found', { 'Content-Type': 'text/plain' });
   }
+
+  if (req.method === 'POST' && p === '/upload/video') return uploadVideo(req, res);
 
   if (req.method === 'POST' && p.startsWith('/api/')) {
     const fn = decodeURIComponent(p.slice(5));

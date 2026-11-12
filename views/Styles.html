@@ -308,6 +308,14 @@
   .thumb-x svg { width: 14px; height: 14px; }
   .thumb-x:focus-visible { outline: 3px solid var(--gold); outline-offset: 1px; }
   .up-note { margin: 8px 0 0; font-size: 13px; color: var(--muted); }
+  .vid-ph { color: var(--muted); display: grid; place-items: center; }
+  .vid-ph svg { width: 30px; height: 30px; }
+  .vid-badge {
+    position: absolute; left: 5px; bottom: 5px; display: inline-flex; align-items: center; gap: 3px;
+    padding: 2px 7px 2px 5px; border-radius: 99px; background: rgba(28,44,76,.78); color: #fff;
+    font-size: 11px; font-weight: 700; pointer-events: none;
+  }
+  .vid-badge svg { width: 11px; height: 11px; }
 
   .mini-spin {
     width: 22px; height: 22px; border-radius: 50%;
@@ -331,6 +339,12 @@
   .g-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
   .g-thumb:hover { transform: translateY(-1px); box-shadow: var(--shadow); }
   .g-thumb:focus-visible { outline: 3px solid var(--gold); outline-offset: 2px; }
+  .g-thumb.vid { position: relative; cursor: pointer; background: var(--navy); }
+  .g-play {
+    position: absolute; inset: 0; margin: auto; width: 34px; height: 34px; border-radius: 50%;
+    display: grid; place-items: center; background: rgba(0,0,0,.55); color: #fff;
+  }
+  .g-play svg { width: 16px; height: 16px; margin-left: 2px; }
   .g-thumb.bad { cursor: not-allowed; }
   .g-thumb.bad svg { width: 26px; height: 26px; }
 
@@ -349,6 +363,10 @@
   .lb-stage img {
     max-width: 100%; max-height: calc(100vh - 140px); object-fit: contain;
     border-radius: 8px; box-shadow: 0 20px 60px rgba(0,0,0,.5); background: #fff;
+  }
+  .lb-stage video {
+    max-width: 100%; max-height: calc(100vh - 140px); border-radius: 8px;
+    box-shadow: 0 20px 60px rgba(0,0,0,.5); background: #000;
   }
   .lb-spin {
     width: 40px; height: 40px; border-radius: 50%;
