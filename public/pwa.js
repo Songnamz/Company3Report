@@ -50,29 +50,68 @@
   });
   window.addEventListener('appinstalled', hideBanner);
 
+  var isIOSChrome = /CriOS|FxiOS|EdgiOS/.test(ua);   // iOS เบราว์เซอร์อื่น: ปุ่มแชร์อยู่มุมขวาบน
+  var SHARE_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-label="แชร์"><path d="M12 3v12M8 7l4-4 4 4"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/></svg>';
+  var ADD_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="M12 8v8M8 12h8"/></svg>';
+
+  /** เปิดหน้านี้ด้วยเบราว์เซอร์ปกติ (ออกจากเบราว์เซอร์ในแอป LINE) */
+  function openExternal() {
+    var u = new URL(location.href);
+    u.searchParams.set('openExternalBrowser', '1');
+    location.href = u.toString();
+  }
+
+  /** iOS: ติดตั้งอัตโนมัติไม่ได้ (Apple ไม่อนุญาต) → แสดงขั้นตอนเพิ่มไปยังหน้าจอโฮม */
+  function showIOSGuide() {
+    if (document.getElementById('pwaGuide')) return;
+    var g = document.createElement('div');
+    g.id = 'pwaGuide'; g.className = 'pwa-guide'; g.setAttribute('role', 'dialog'); g.setAttribute('aria-modal', 'true');
+    g.setAttribute('aria-label', 'วิธีติดตั้งแอปบน iPhone');
+    g.innerHTML =
+      '<div class="pwa-sheet">' +
+        '<div class="pwa-sheet-head"><img src="/icons/icon-192.png" alt="">' +
+          '<b>ติดตั้งแอป ' + (isAdmin ? 'ร้อย3 ผู้ดูแล' : 'ร้อย3') + ' บน iPhone / iPad</b>' +
+          '<button type="button" class="pwa-close" aria-label="ปิด">✕</button></div>' +
+        '<ol class="pwa-steps">' +
+          '<li><span class="pwa-ico">' + SHARE_ICON + '</span><span>แตะปุ่ม <b>แชร์</b> ' +
+            (isIOSChrome ? 'ที่มุมขวาบน (ข้างช่องที่อยู่เว็บ)' : 'ที่แถบด้านล่างของ Safari (บน iPad อยู่ด้านบน)') + '</span></li>' +
+          '<li><span class="pwa-ico">' + ADD_ICON + '</span><span>เลื่อนลง แล้วเลือก <b>“เพิ่มไปยังหน้าจอโฮม”</b><br><small>(Add to Home Screen)</small></span></li>' +
+          '<li><span class="pwa-ico pwa-num">✓</span><span>แตะ <b>“เพิ่ม”</b> มุมขวาบน — ไอคอน ร้อย3 จะอยู่บนหน้าจอโฮม</span></li>' +
+        '</ol>' +
+        '<button type="button" class="pwa-install pwa-ok">เข้าใจแล้ว</button>' +
+      '</div>' +
+      (isIOSChrome ? '' : '<div class="pwa-arrow" aria-hidden="true">↓</div>');
+    document.body.appendChild(g);
+    var close = function () { g.remove(); };
+    g.querySelector('.pwa-close').addEventListener('click', close);
+    g.querySelector('.pwa-ok').addEventListener('click', close);
+    g.addEventListener('click', function (e) { if (e.target === g) close(); });
+  }
+
   function showBanner(kind) {
-    if (standalone || isLineApp || document.getElementById('pwaBanner')) return;
+    if (standalone || document.getElementById('pwaBanner')) return;
     var until = Number(store.get(DISMISS_KEY) || 0);
     if (until > Date.now()) return;
 
     var bar = document.createElement('div');
     bar.id = 'pwaBanner'; bar.className = 'pwa-banner'; bar.setAttribute('role', 'region');
     bar.setAttribute('aria-label', 'ติดตั้งแอป');
-    var share = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-label="แชร์"><path d="M12 3v12M8 7l4-4 4 4"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/></svg>';
     bar.innerHTML =
       '<img src="/icons/icon-192.png" alt="">' +
       '<div class="pwa-text"><b>ติดตั้งแอป ' + (isAdmin ? 'ร้อย3 ผู้ดูแล' : 'ร้อย3') + '</b>' +
-      (kind === 'ios'
-        ? '<span>แตะ ' + share + ' แล้วเลือก “เพิ่มไปยังหน้าจอโฮม”</span>'
+      (kind === 'line'
+        ? '<span>ติดตั้งในแอป LINE ไม่ได้ — เปิดใน' + (isIOS ? ' Safari' : 'เบราว์เซอร์') + 'ก่อน</span>'
         : '<span>เปิดใช้งานได้เร็ว จากหน้าจอโฮม</span>') +
       '</div>' +
-      (kind === 'android' ? '<button type="button" class="pwa-install">ติดตั้ง</button>' : '') +
+      '<button type="button" class="pwa-install">' + (kind === 'line' ? (isIOS ? 'เปิดใน Safari' : 'เปิดในเบราว์เซอร์') : 'ติดตั้ง') + '</button>' +
       '<button type="button" class="pwa-close" aria-label="ปิด">✕</button>';
     document.body.appendChild(bar);
     document.body.classList.add('has-pwa-banner');
 
     var inst = bar.querySelector('.pwa-install');
     if (inst) inst.addEventListener('click', function () {
+      if (kind === 'line') return openExternal();
+      if (kind === 'ios') return showIOSGuide();
       if (!deferred) return;
       deferred.prompt();
       deferred.userChoice.finally(function () { deferred = null; hideBanner(); });
@@ -90,7 +129,9 @@
 
   document.addEventListener('DOMContentLoaded', function () {
     if (standalone) { setupStandaloneLogin(); return; }
-    // iOS ไม่มีปุ่มติดตั้งอัตโนมัติ → แสดงวิธีเพิ่มไปยังหน้าจอโฮม
+    // ในแอป LINE ติดตั้งไม่ได้ → ชวนเปิดในเบราว์เซอร์ปกติ
+    if (isLineApp) return setTimeout(function () { showBanner('line'); }, 1200);
+    // iOS ไม่มี beforeinstallprompt → ปุ่ม "ติดตั้ง" เปิดขั้นตอนเพิ่มไปยังหน้าจอโฮม
     if (isIOS) setTimeout(function () { showBanner('ios'); }, 1200);
   });
 })();

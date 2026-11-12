@@ -757,7 +757,11 @@ async function finishLogin(req, res, url) {
   const state = url.searchParams.get('state') || '', code = url.searchParams.get('code') || '';
   const st = oauthStates.get(state);
   oauthStates.delete(state);
-  if (!st || st.exp < Date.now() || !code || !safeEq(parseCookies(req).r3o || '', state)) {
+  // cookie r3o ผูก state กับเบราว์เซอร์ที่เริ่มล็อกอิน (กันคนอื่นส่งลิงก์ callback มาให้กด)
+  // แอปที่ติดตั้งบน iOS: หน้า LINE Login เปิดใน Safari/แอป LINE ซึ่งไม่มี cookie ของแอป → ไม่มี r3o
+  //   กรณีนี้ใช้รหัส 6 หลักแทน (ต้องนำไปพิมพ์ในแอปของตัวเอง) และไม่ตั้ง session ในเบราว์เซอร์นั้น
+  const sameBrowser = safeEq(parseCookies(req).r3o || '', state);
+  if (!st || st.exp < Date.now() || !code || (!sameBrowser && !st.pwa)) {
     return fail('ลิงก์เข้าสู่ระบบหมดอายุ กรุณาลองใหม่');
   }
   try {
@@ -786,7 +790,7 @@ async function finishLogin(req, res, url) {
                 ON CONFLICT(user_id) DO UPDATE SET name = excluded.name, picture = excluded.picture, last_seen = excluded.last_seen`)
       .run(prof.sub, name, picture, now, now);
     const token = crypto.randomBytes(32).toString('hex');
-    db.prepare('INSERT INTO student_sessions (token, user_id, expires) VALUES (?, ?, ?)')
+    if (sameBrowser) db.prepare('INSERT INTO student_sessions (token, user_id, expires) VALUES (?, ?, ?)')
       .run(token, prof.sub, now + APP.STUDENT_SESSION_SEC * 1000);
     console.log('login: ' + prof.sub + ' (' + name + ')' + (st.pwa ? ' [pwa]' : ''));
     if (st.pwa) {
@@ -796,7 +800,8 @@ async function finishLogin(req, res, url) {
       pwaCodes.set(code, { userId: prof.sub, exp: now + 5 * 60 * 1000 });
       res.writeHead(200, Object.assign({}, BASE_HEADERS, {
         'Content-Type': 'text/html; charset=utf-8',
-        'Set-Cookie': [cookieSet(COOKIE, token, APP.STUDENT_SESSION_SEC), cookieSet('r3o', '', 0)],
+        'Set-Cookie': sameBrowser ? [cookieSet(COOKIE, token, APP.STUDENT_SESSION_SEC), cookieSet('r3o', '', 0)]
+                                  : [cookieSet('r3o', '', 0)],
         'Cache-Control': 'no-store'
       }));
       return res.end(PAGES.loginCode.replace('{{CODE}}', code));
@@ -817,6 +822,8 @@ async function finishLogin(req, res, url) {
 
 const escHtml = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
+// เปลี่ยนทุกครั้งที่แก้ pwa.js → เบราว์เซอร์ไม่ใช้ไฟล์เก่าจาก cache
+const PWA_VER = crypto.createHash('sha1').update(fs.readFileSync(path.join(__dirname, 'public', 'pwa.js'))).digest('hex').slice(0, 8);
 function renderPage(name, title) {
   const styles = fs.readFileSync(path.join(VIEWS, 'Styles.html'), 'utf8');
   const manifest = name === 'Admin' ? '/admin.webmanifest' : '/manifest.webmanifest';
@@ -829,7 +836,7 @@ function renderPage(name, title) {
                `  <meta name="apple-mobile-web-app-capable" content="yes">\n` +
                `  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">\n` +
                `  <meta name="apple-mobile-web-app-title" content="${name === 'Admin' ? 'ร้อย3 ผู้ดูแล' : 'ร้อย3'}">\n` +
-               `  <script src="/pwa.js" defer></script>\n` +
+               `  <script src="/pwa.js?v=${PWA_VER}" defer></script>\n` +
                `  <title>${escHtml(title)}</title>\n  ${styles}\n  <script src="/gas-shim.js"></script>`;
   return fs.readFileSync(path.join(VIEWS, name + '.html'), 'utf8')
     .replace("<?!= include('Styles'); ?>", () => head)

@@ -2,7 +2,7 @@
  * - หน้าเว็บ: ดึงจากเซิร์ฟเวอร์ก่อนเสมอ (สถานะล็อกอิน/ข้อมูลต้องสดใหม่) — ออฟไลน์ → หน้า offline
  * - ไฟล์คงที่ (โลโก้ ไอคอน สคริปต์): ใช้จาก cache แล้วอัปเดตเบื้องหลัง
  * - API / ล็อกอิน / รูปแนบ / webhook: ไม่ยุ่งเลย */
-const VERSION = 'r3-v3';
+const VERSION = 'r3-v4';
 const SHELL = ['/offline.html', '/logo.jpg', '/gas-shim.js', '/pwa.js', '/icons/icon-192.png'];
 const STATIC = /^\/(logo\.jpg|favicon\.ico|gas-shim\.js|pwa\.js|offline\.html|icons\/.+)$/;
 const BYPASS = /^\/(api\/|auth\/|login|logout|webhook|i\/|upload\/|sw\.js)/;
