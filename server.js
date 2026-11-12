@@ -19,6 +19,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { DatabaseSync } = require('node:sqlite');
+const { execFile } = require('node:child_process');
 
 const env = process.env;
 const APP = {
@@ -200,11 +201,70 @@ const isVideo = p => /\.(mp4|mov)$/.test(p || '');
 const thumbFile = id => path.join(IMG_DIR, id + '.thumb.jpg');
 const MIME = { '.jpg': 'image/jpeg', '.png': 'image/png', '.mp4': 'video/mp4', '.mov': 'video/quicktime' };
 
-/** ตรวจ header ไฟล์วิดีโอ (ISO BMFF: 'ftyp' ที่ byte 4) → 'mp4' | 'mov' | '' */
+/** ตรวจ header ไฟล์วิดีโอ → 'mp4' | 'mov' | 'webm' | '' */
 function videoExt(head) {
-  if (head.length < 12 || head.toString('latin1', 4, 8) !== 'ftyp') return '';
+  if (head.length >= 4 && head.readUInt32BE(0) === 0x1A45DFA3) return 'webm';   // Matroska/WebM
+  if (head.length < 12 || head.toString('latin1', 4, 8) !== 'ftyp') return '';   // ISO BMFF
   return head.toString('latin1', 8, 12) === 'qt  ' ? 'mov' : 'mp4';
 }
+
+/* ───── แปลงวิดีโอ (ffmpeg) ─────
+ * อัปโหลด → เก็บเป็น <id>.orig → แปลงเบื้องหลังเป็น <id>.mp4 (H.264 + AAC, ด้านยาว ≤1280, faststart)
+ *   + ภาพตัวอย่าง <id>.thumb.jpg  แล้วลบไฟล์ต้นฉบับ
+ * ทำทีละไฟล์ (ไม่ให้แย่ง CPU กับระบบอื่นบนเซิร์ฟเวอร์) — ถ้าแปลงไม่ได้ ใช้ไฟล์เดิม (mp4/mov) แทน */
+const jobs = new Map();          // id → Promise (กำลังแปลง/รอคิว)
+let ffQueue = Promise.resolve();
+const VIDEO_MAX_SEC = Number(env.VIDEO_MAX_SEC) || 180;
+
+const ff = (args, timeoutMs) => new Promise((resolve, reject) => {
+  execFile('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', ...args],
+    { timeout: timeoutMs, maxBuffer: 1 << 20 }, (err, _o, stderr) => err ? reject(new Error(String(stderr || err.message).slice(-500))) : resolve());
+});
+
+async function transcode(id, src, ext) {
+  const out = path.join(IMG_DIR, id + '.mp4');
+  const tmp = path.join(IMG_DIR, id + '.tmp.mp4');
+  const t0 = Date.now();
+  try {
+    await ff(['-i', src, '-t', String(VIDEO_MAX_SEC),
+      '-map', '0:v:0', '-map', '0:a:0?', '-map_metadata', '-1',          // ตัด metadata (GPS/รุ่นกล้อง)
+      '-vf', "scale='if(gte(iw,ih),min(1280,iw),-2)':'if(gte(iw,ih),-2,min(1280,ih))',fps=fps='min(source_fps,30)',format=yuv420p",
+      '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '26', '-profile:v', 'high', '-threads', '4',
+      '-c:a', 'aac', '-b:a', '128k', '-ac', '2',
+      '-movflags', '+faststart', tmp], 10 * 60 * 1000);
+    fs.renameSync(tmp, out);
+    console.log(`video ${id}: แปลงเสร็จ ${(fs.statSync(src).size / 1048576).toFixed(1)}MB → ${(fs.statSync(out).size / 1048576).toFixed(1)}MB (${((Date.now() - t0) / 1000).toFixed(1)}s)`);
+  } catch (e) {
+    fs.rmSync(tmp, { force: true });
+    if (ext === 'webm') { console.error(`video ${id}: แปลงไม่สำเร็จ (webm ใช้ต้นฉบับไม่ได้):`, e.message); fs.rmSync(src, { force: true }); return; }
+    console.error(`video ${id}: แปลงไม่สำเร็จ ใช้ไฟล์ต้นฉบับแทน:`, e.message);
+    fs.renameSync(src, path.join(IMG_DIR, id + '.' + ext));
+    return;
+  }
+  fs.rmSync(src, { force: true });
+  try {
+    await ff(['-ss', '0.5', '-i', out, '-frames:v', '1', '-vf', "scale='min(640,iw)':-2", '-q:v', '4', thumbFile(id)], 60 * 1000);
+  } catch (e) {
+    try { await ff(['-i', out, '-frames:v', '1', '-vf', "scale='min(640,iw)':-2", '-q:v', '4', thumbFile(id)], 60 * 1000); }
+    catch (e2) { console.warn(`video ${id}: สร้างภาพตัวอย่างไม่ได้`); }
+  }
+}
+
+function queueTranscode(id, src, ext) {
+  const job = ffQueue.then(() => transcode(id, src, ext)).catch(e => console.error('transcode:', e)).finally(() => jobs.delete(id));
+  ffQueue = job;
+  jobs.set(id, job);
+  return job;
+}
+
+/** รอให้วิดีโอในรายการแปลงเสร็จ (สูงสุด maxMs) */
+const waitVideos = (ids, maxMs) => Promise.race([
+  Promise.all((ids || []).map(id => jobs.get(id)).filter(Boolean)),
+  new Promise(r => setTimeout(r, maxMs))
+]);
+
+/** id นี้เป็นวิดีโอไหม (รวมที่กำลังแปลง) */
+const isVideoId = id => jobs.has(id) || isVideo(imgPath(id));
 
 /** base64 → { bytes, mime } ตรวจ magic bytes จริง */
 function decodeImage(b64) {
@@ -225,7 +285,7 @@ function verifyUpload(u) {
   u = u || {};
   const id = String(u.id || ''), shared = u.shared === true, t = Number(u.t) || 0;
   const ok = ID_RE.test(id) && Date.now() - t < 12 * 3600 * 1000 &&
-             safeEq(String(u.sig || ''), sign([id, shared ? 1 : 0, t].join('|'))) && imgPath(id);
+             safeEq(String(u.sig || ''), sign([id, shared ? 1 : 0, t].join('|'))) && (imgPath(id) || jobs.has(id));
   if (!ok) fail('รูปแนบไม่ถูกต้องหรือหมดอายุ — กรุณาลบรูปแล้วแนบใหม่');
   return { id, shared };
 }
@@ -239,7 +299,7 @@ function cleanup() {
   for (const f of fs.readdirSync(IMG_DIR)) {
     const p = path.join(IMG_DIR, f);
     try {
-      if (!used.has(f.split('.')[0]) && fs.statSync(p).mtimeMs < cutoff) { fs.unlinkSync(p); removed++; }
+      if (!used.has(f.split('.')[0]) && !jobs.has(f.split('.')[0]) && fs.statSync(p).mtimeMs < cutoff) { fs.unlinkSync(p); removed++; }
     } catch (e) { /* ignore */ }
   }
   db.prepare('DELETE FROM sessions WHERE expires < ?').run(Date.now());
@@ -270,7 +330,7 @@ const API = {
     const raw = Array.isArray(form.images) ? form.images : [];
     if (raw.length > APP.MAX_IMAGES) fail('แนบไฟล์ได้สูงสุด ' + APP.MAX_IMAGES + ' ไฟล์');
     const ups = raw.map(verifyUpload).filter((u, i, a) => a.findIndex(x => x.id === u.id) === i);
-    if (ups.filter(u => isVideo(imgPath(u.id))).length > APP.MAX_VIDEOS) fail('แนบวิดีโอได้สูงสุด ' + APP.MAX_VIDEOS + ' คลิป');
+    if (ups.filter(u => isVideoId(u.id)).length > APP.MAX_VIDEOS) fail('แนบวิดีโอได้สูงสุด ' + APP.MAX_VIDEOS + ' คลิป');
 
     throttle('rate', APP.MAX_PER_10MIN);
     r.id = newReportId();
@@ -301,10 +361,11 @@ const API = {
   async uploadThumb(ctx, up, b64) {
     requireStudent(ctx);
     const u = verifyUpload(up);
-    if (!isVideo(imgPath(u.id))) fail('ไฟล์นี้ไม่ใช่วิดีโอ');
+    if (!isVideoId(u.id)) fail('ไฟล์นี้ไม่ใช่วิดีโอ');
     const b = decodeImage(b64);
     if (b.mime !== 'image/jpeg') fail('ภาพตัวอย่างต้องเป็น JPG');
-    fs.writeFileSync(thumbFile(u.id), b.bytes);
+    // ใช้ชั่วคราวระหว่างแปลง — ffmpeg สร้างภาพตัวอย่างใหม่ทับเมื่อแปลงเสร็จ
+    if (!fs.existsSync(thumbFile(u.id))) fs.writeFileSync(thumbFile(u.id), b.bytes);
     return true;
   },
 
@@ -348,7 +409,7 @@ const API = {
       detail: v.detail,
       contact: v.contact,
       images: v.images.split(',').map(s => s.trim()).filter(Boolean),
-      videos: v.images.split(',').map(s => s.trim()).filter(id => id && isVideo(imgPath(id))),
+      videos: v.images.split(',').map(s => s.trim()).filter(id => id && isVideoId(id)),
       sender: v.user_id ? { name: v.user_name, picture: v.user_picture } : null
     }));
     return { items };
@@ -396,10 +457,11 @@ const LINE_TO = String(env.LINE_TO || '').split(',').map(s => s.trim()).filter(B
 
 async function notifyLine(r) {
   if (!LINE_TOKEN || !LINE_TO.length) { console.warn('LINE ยังไม่ได้ตั้งค่า (LINE_TOKEN / LINE_TO)'); return; }
+  await waitVideos(r.lineImages, 8 * 60 * 1000);   // การ์ดต้องใช้ไฟล์ MP4 ที่แปลงเสร็จแล้ว
   if (!APP.APP_URL) console.warn('APP_URL ยังไม่ได้ตั้ง — การ์ดจะไม่มีปุ่ม/รูป');
   // openExternalBrowser=1 → LINE เปิดด้วยเบราว์เซอร์ปกติของเครื่อง
   const adminUrl = APP.APP_URL ? APP.APP_URL + '/admin?openExternalBrowser=1' : '';
-  const pics = APP.APP_URL ? (r.lineImages || []).slice(0, 4) : [];
+  const pics = APP.APP_URL ? (r.lineImages || []).filter(id => imgPath(id)).slice(0, 4) : [];
   const vids = pics.filter(id => isVideo(imgPath(id)));
   const imgMsg = id => ({ type: 'image', originalContentUrl: imgUrl(id), previewImageUrl: imgUrl(id) });
   // วิดีโออยู่ในการ์ดเท่านั้น (ภาพตัวอย่าง + ▶ แตะเพื่อเล่น) — ไม่ส่งเป็นข้อความแยก
@@ -945,9 +1007,11 @@ async function uploadVideo(req, res) {
     const fd = fs.openSync(tmp, 'r'), head = Buffer.alloc(12);
     fs.readSync(fd, head, 0, 12, 0); fs.closeSync(fd);
     const ext = videoExt(head);
-    if (!ext) fail('วิดีโอต้องเป็นไฟล์ MP4 / MOV');
+    if (!ext) fail('วิดีโอต้องเป็นไฟล์ MP4 / MOV / WEBM');
     const id = crypto.randomBytes(24).toString('base64url');
-    fs.renameSync(tmp, path.join(IMG_DIR, id + '.' + ext));
+    const src = path.join(IMG_DIR, id + '.' + ext + '.orig');
+    fs.renameSync(tmp, src);
+    queueTranscode(id, src, ext);
     const shared = APP.LINE_IMAGES, t = Date.now();
     return json(res, 200, { ok: true, result: { id, shared, t, sig: sign([id, shared ? 1 : 0, t].join('|')) } });
   } catch (e) {
@@ -1089,6 +1153,11 @@ if (cmd === 'set-password') {
 } else {
   cleanup();
   setInterval(cleanup, 6 * 3600 * 1000).unref();
+  // วิดีโอที่ค้างแปลง (เซิร์ฟเวอร์รีสตาร์ทระหว่างแปลง) → แปลงต่อ
+  for (const f of fs.readdirSync(IMG_DIR)) {
+    const m = /^([\w-]+)\.(mp4|mov|webm)\.orig$/.exec(f);
+    if (m) { fs.rmSync(path.join(IMG_DIR, m[1] + '.tmp.mp4'), { force: true }); queueTranscode(m[1], path.join(IMG_DIR, f), m[2]); }
+  }
   const server = http.createServer((req, res) => {
     handle(req, res).catch(e => { console.error(e); if (!res.headersSent) send(res, 500, 'Error'); });
   });

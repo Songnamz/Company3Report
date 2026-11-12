@@ -63,7 +63,7 @@
             <input type="file" id="fileIn" accept="image/*,video/*" multiple>
           </label>
         </div>
-        <p class="up-note">ไฟล์จะอัปโหลดทันทีที่เลือก · รูปถูกย่อขนาดและลบข้อมูลตำแหน่ง (GPS) ให้อัตโนมัติ · วิดีโอ MP4 / MOV คลิปละไม่เกิน <span id="maxVidMb">50</span> MB (ควรสั้นไม่เกิน 1 นาที)</p>
+        <p class="up-note">ไฟล์จะอัปโหลดทันทีที่เลือก · รูปถูกย่อขนาดและลบข้อมูลตำแหน่ง (GPS) ให้อัตโนมัติ · วิดีโอ MP4 / MOV / WEBM คลิปละไม่เกิน <span id="maxVidMb">50</span> MB (ควรสั้นไม่เกิน 1 นาที)</p>
       </div>
 
       <input name="website" class="hp" tabindex="-1" autocomplete="off" aria-hidden="true">
@@ -292,7 +292,7 @@
 
     let chain = Promise.resolve();               // ย่อทีละรูป (ไม่ให้เครื่องค้าง) แต่อัปโหลดขนานกันได้
     files.slice(0, Math.max(0, room)).forEach(file => {
-      const isVid = /^video\//.test(file.type) || /\.(mp4|mov|m4v)$/i.test(file.name);
+      const isVid = /^video\//.test(file.type) || /\.(mp4|mov|m4v|webm)$/i.test(file.name);
       if (isVid) return addVideo(file);
       if (file.type && !file.type.startsWith('image/')) {
         $('err').textContent = `ไฟล์ ${file.name} ไม่ใช่รูปภาพหรือวิดีโอ`;
@@ -322,8 +322,8 @@
     if (file.size > MAX_VIDEO_MB * 1024 * 1024) {
       $('err').textContent = `วิดีโอ ${file.name} ใหญ่เกิน ${MAX_VIDEO_MB} MB — ลองตัดให้สั้นลง หรืออัดใหม่ที่ความละเอียดต่ำลง`; return;
     }
-    if (file.type && !/^video\/(mp4|quicktime|x-m4v)$/.test(file.type)) {
-      $('err').textContent = `วิดีโอ ${file.name} ต้องเป็นไฟล์ MP4 หรือ MOV`; return;
+    if (file.type && !/^video\/(mp4|quicktime|x-m4v|webm)$/.test(file.type)) {
+      $('err').textContent = `วิดีโอ ${file.name} ต้องเป็นไฟล์ MP4, MOV หรือ WEBM`; return;
     }
     const it = { key: ++seq, video: true, file, mb: (file.size / 1048576).toFixed(file.size < 10485760 ? 1 : 0),
                  data: null, state: 'compress', up: null };

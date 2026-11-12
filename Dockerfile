@@ -1,6 +1,8 @@
 FROM node:22-alpine
 ENV NODE_ENV=production NODE_NO_WARNINGS=1 TZ=Asia/Bangkok DATA_DIR=/data PORT=3000
 WORKDIR /app
+# ffmpeg: แปลงวิดีโอทุกไฟล์เป็น MP4 (H.264/AAC) ให้เล่นได้ทุกเครื่องและใน LINE
+RUN apk add --no-cache ffmpeg
 COPY server.js import.js ./
 COPY views ./views
 COPY public ./public
